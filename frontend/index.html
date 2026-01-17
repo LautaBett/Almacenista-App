@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Control de Almacén</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; background-color: #8c31aa; color: #333; }
+        h1 { text-align: center; color: #2c3e50; }
+        
+        .formulario { background: white; padding: 20px; margin-bottom: 20px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); display: flex; gap: 10px; flex-wrap: wrap; align-items: center;}
+        input { padding: 10px; border: 1px solid #ddd; border-radius: 4px; flex: 1; }
+        
+        /* Botones Generales */
+        button { padding: 10px 15px; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; color: white; transition: 0.3s; }
+        
+        /* Colores de Botones */
+        .btn-verde { background-color: #28a745; } /* Agregar */
+        .btn-verde:hover { background-color: #218838; }
+        
+        .btn-azul { background-color: #007bff; } /* Actualizar */
+        .btn-azul:hover { background-color: #0056b3; }
+
+        .btn-rojo { background-color: #dc3545; padding: 5px 10px; font-size: 0.9em; } /* Borrar */
+        .btn-rojo:hover { background-color: #c82333; }
+
+        .btn-amarillo { background-color: #ffc107; color: #333; padding: 5px 10px; font-size: 0.9em; margin-right: 5px; } /* Editar */
+        .btn-amarillo:hover { background-color: #e0a800; }
+
+        .btn-gris { background-color: #6c757d; display: none; } /* Cancelar */
+        .btn-gris:hover { background-color: #5a6268; }
+
+        /* Tabla */
+        table { width: 100%; border-collapse: collapse; background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+        th, td { padding: 15px; text-align: left; border-bottom: 1px solid #eee; }
+        th { background-color: #007bff; color: white; text-transform: uppercase; font-size: 0.85rem; }
+        tr:hover { background-color: #f8f9fa; }
+        
+        #mensaje { text-align: center; margin-top: 20px; color: #666; }
+    </style>
+</head>
+<body>
+
+    <h1>📦 Gestión de Almacén</h1>
+
+    <div class="formulario">
+        <input type="hidden" id="id-producto">
+        
+        <input type="text" id="nombre" placeholder="Producto" required>
+        <input type="number" id="precio" placeholder="Precio" step="0.01" required>
+        <input type="number" id="cantidad" placeholder="Cantidad" required>
+        
+        <button id="btn-accion" class="btn-verde" onclick="procesarFormulario()">➕ Agregar</button>
+        
+        <button id="btn-cancelar" class="btn-gris" onclick="limpiarFormulario()">❌ Cancelar</button>
+    </div>
+
+    <table>
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>Producto</th>
+                <th>Precio</th>
+                <th>Cantidad</th>
+                <th style="width: 150px;">Acciones</th>
+            </tr>
+        </thead>
+        <tbody id="tabla-productos"></tbody>
+    </table>
+
+    <p id="mensaje">Cargando inventario...</p>
+
+    <script>
+        const API_URL = 'http://localhost:8080/productos';
+        let modoEdicion = false; // Variable para saber si estamos editando
+
+        // 1. CARGAR (GET)
+        async function cargarProductos() {
+            try {
+                const respuesta = await fetch(API_URL);
+                const productos = await respuesta.json();
+                
+                const tabla = document.getElementById('tabla-productos');
+                const mensaje = document.getElementById('mensaje');
+                tabla.innerHTML = '';
+
+                if (productos.length === 0) {
+                    mensaje.textContent = "El inventario está vacío.";
+                    mensaje.style.display = 'block';
+                    return;
+                }
+
+                mensaje.style.display = 'none';
+                productos.forEach(producto => {
+                    tabla.innerHTML += `
+                        <tr>
+                            <td>#${producto.id}</td>
+                            <td><strong>${producto.nombre}</strong></td>
+                            <td>$${producto.precio}</td>
+                            <td>${producto.cantidad}</td>
+                            <td>
+                                <button class="btn-amarillo" onclick="llenarFormulario(${producto.id}, '${producto.nombre}', ${producto.precio}, ${producto.cantidad})">✏️</button>
+                                <button class="btn-rojo" onclick="borrarProducto(${producto.id})">🗑️</button>
+                            </td>
+                        </tr>
+                    `;
+                });
+            } catch (error) {
+                console.error("Error:", error);
+                document.getElementById('mensaje').textContent = "❌ Error de conexión.";
+            }
+        }
+
+        // 2. LÓGICA PRINCIPAL (Decide si Guardar o Actualizar)
+        async function procesarFormulario() {
+            const nombre = document.getElementById('nombre').value;
+            const precio = document.getElementById('precio').value;
+            const cantidad = document.getElementById('cantidad').value;
+            const id = document.getElementById('id-producto').value; // Recuperamos el ID oculto
+
+            if (!nombre || !precio || !cantidad) { alert("Completa los campos"); return; }
+
+            const productoDatos = { nombre, precio: parseFloat(precio), cantidad: parseInt(cantidad) };
+
+            try {
+                if (modoEdicion) {
+                    // --- MODO ACTUALIZAR (PUT) ---
+                    await fetch(`${API_URL}/${id}`, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(productoDatos)
+                    });
+                } else {
+                    // --- MODO AGREGAR (POST) ---
+                    await fetch(API_URL, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(productoDatos)
+                    });
+                }
+                
+                limpiarFormulario(); // Resetear todo
+                cargarProductos();   // Recargar tabla
+
+            } catch (error) {
+                console.error("Error:", error);
+                alert("Error al procesar la solicitud");
+            }
+        }
+
+        // 3. PREPARAR EDICIÓN (Llena los inputs cuando tocas el lápiz)
+        function llenarFormulario(id, nombre, precio, cantidad) {
+            document.getElementById('id-producto').value = id;
+            document.getElementById('nombre').value = nombre;
+            document.getElementById('precio').value = precio;
+            document.getElementById('cantidad').value = cantidad;
+
+            // Cambiar estado visual
+            modoEdicion = true;
+            const btn = document.getElementById('btn-accion');
+            btn.textContent = "🔄 Actualizar";
+            btn.className = "btn-azul"; // Cambiar a azul
+            document.getElementById('btn-cancelar').style.display = 'inline-block'; // Mostrar botón cancelar
+        }
+
+        // 4. LIMPIAR FORMULARIO (Vuelve al estado original)
+        function limpiarFormulario() {
+            document.getElementById('id-producto').value = '';
+            document.getElementById('nombre').value = '';
+            document.getElementById('precio').value = '';
+            document.getElementById('cantidad').value = '';
+
+            // Volver a estado "Agregar"
+            modoEdicion = false;
+            const btn = document.getElementById('btn-accion');
+            btn.textContent = "➕ Agregar";
+            btn.className = "btn-verde"; // Volver a verde
+            document.getElementById('btn-cancelar').style.display = 'none'; // Ocultar cancelar
+        }
+
+        // 5. BORRAR (DELETE)
+        async function borrarProducto(id) {
+            if (!confirm("¿Eliminar este producto?")) return;
+            await fetch(`${API_URL}/${id}`, { method: 'DELETE' });
+            cargarProductos();
+        }
+
+        cargarProductos();
+    </script>
+
+</body>
+</html>
